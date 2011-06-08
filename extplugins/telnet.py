@@ -18,12 +18,18 @@
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA    02110-1301    USA
 #----------------------------------------------------------------------------
 #
+# CHANGELOG:
 #
-__version__ = '1.0'
+# 1.1 - 2011-06-08
+#    * add message of the day
+#    * resolve ip to domain name upon connection
+#
+__version__ = '1.1'
 __author__    = 'Courgette'
 
-from ConfigParser import NoOptionError
+from ConfigParser import NoOptionError, ConfigParser
 from b3.clients import Client
+from datetime import datetime, timedelta
 import SocketServer
 import b3
 import b3.events
@@ -36,7 +42,7 @@ import sys
 import thread
 import threading
 import time
-from datetime import datetime, timedelta
+import os
 
 TELNET_QUIT = object()
 TELNET_AUTHENTICATED = object()
@@ -257,7 +263,8 @@ class TelnetRequestHandler(SocketServer.BaseRequestHandler):
 
     def setup(self):
         plugin = self.server.plugin
-        plugin.debug("telnet client connecting from %s:%s" % self.client_address)
+        plugin.info("telnet client connecting from %s:%s" % self.client_address)
+        plugin.info("%r", socket.gethostbyaddr(self.client_address[0]))
         
         plugin.addTelnetSession(self)
         
@@ -307,6 +314,7 @@ class TelnetRequestHandler(SocketServer.BaseRequestHandler):
                                 self.client.groupBits = plugin.telnetGroup.id
                                 self.authed = True
                                 processor = TelnetAuthenticatedCommandProcessor(plugin, self.client, self.server)
+                                self._displayMOTD()
                                 self.request.send("type 'help' to have a list of available commands\n\r")
                             elif not self.authed:
                                 self.password_retries += 1
@@ -357,6 +365,18 @@ class TelnetRequestHandler(SocketServer.BaseRequestHandler):
     def finish(self):
        self.server.plugin.removeTelnetSession(self)
 
+    def _displayMOTD(self):
+        plugin = self.server.plugin
+        try:
+            motd_file = plugin.config.getpath('general_preferences', 'motd')
+            if not os.path.isfile(motd_file):
+                plugin.warning("Could not find MOTD file at %s" % motd_file)
+                return
+            with open(motd_file, 'r') as f:
+                for line in f:
+                    self.request.send(line.rstrip() + "\n\r")
+        except NoOptionError:
+            pass
 
 class TelnetCommandProcessor(object):
     def __init__(self, plugin, client, server):
@@ -430,9 +450,13 @@ if __name__ == '__main__':
     <set name="password">321321321</set>
         
         <!-- The B3 group tha telnet admins belong to. 
-    Specify the group keyword : 
-          guest, user, reg, mod, admin, fulladmin, senioradmin, superadmin -->
-    <set name="admin_level">fulladmin</set>
+        Specify the group keyword : 
+              guest, user, reg, mod, admin, fulladmin, senioradmin, superadmin -->
+        <set name="admin_level">superadmin</set> 
+           
+        <!-- specify a Message Of The Day file that content will be displayed
+        to authenticated users -->
+        <set name="motd">c:/tmp/telnet_motd.txt</set>
     </settings>
 </configuration>
 """)
