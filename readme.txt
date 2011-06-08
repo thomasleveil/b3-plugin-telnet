@@ -30,7 +30,9 @@ Changelog
 
 2011-06-08 - 1.0
 * first release
-
+2011-06-08 - 1.1
+* add message of the day
+* resolve ip to domain name upon connection
 
 
 Support
