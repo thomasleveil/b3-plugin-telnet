@@ -23,10 +23,12 @@
 # 1.1 - 2011-06-08
 #    * add message of the day
 #    * resolve ip to domain name upon connection
+# 1.2 - 2011-06-09
+#    * refactor TelnetAuthenticatedCommandProcessor so it is easier to add new commands
+#    * add /who /name
 #
-__version__ = '1.1'
+__version__ = '1.2'
 __author__    = 'Courgette'
-
 from ConfigParser import NoOptionError, ConfigParser
 from b3.clients import Client
 from datetime import datetime, timedelta
@@ -35,6 +37,7 @@ import b3
 import b3.events
 import b3.plugin
 import logging
+import os
 import re
 import select
 import socket
@@ -42,7 +45,8 @@ import sys
 import thread
 import threading
 import time
-import os
+import traceback
+
 
 TELNET_QUIT = object()
 TELNET_AUTHENTICATED = object()
@@ -269,6 +273,7 @@ class TelnetRequestHandler(SocketServer.BaseRequestHandler):
         plugin.addTelnetSession(self)
         
         self.client = plugin.console.clients.newClient(cid="(%s:%s)" % self.client_address, name="remote admin (%s:%s)" % self.client_address, groupBits=0, hide=True)
+        self.client.connection_datetime = datetime.now()
         
         # change Client.message() method so any message B3 would like to be
         # sent to that fake client as PM is redirected to this telnet session.
@@ -304,8 +309,12 @@ class TelnetRequestHandler(SocketServer.BaseRequestHandler):
                             line, text = text.split("\n", 1)
                             line = line.rstrip()
         
-                            result = processor.process(line, self.request)
-        
+                            try:
+                                result = processor.process(line, self.request)
+                            except:
+                                for line in traceback.format_exc().splitlines():
+                                    self.request.send(line + "\n\r")
+
                             if result == TELNET_QUIT:
                                 done = True
                                 break
@@ -392,10 +401,12 @@ class TelnetCommandProcessor(object):
             
 class TelnetAuthenticatedCommandProcessor(TelnetCommandProcessor):
     help = """available commands :
-  /quit         : terminate the telnet session
-  /sessions     : list current telnet sessions 
-  /bans         : list current telnet bans 
-  !<b3_command> : execute a b3 command
+  /quit, quit      : terminate the telnet session
+  /whoami          : display your name
+  /name <new name> : change your name
+  /who             : list current telnet sessions 
+  /bans            : list current telnet bans 
+  !<b3_command>    : execute a b3 command
 
 anything that is not a recognized command will be broadcasted to the game server chat
 """
@@ -405,33 +416,72 @@ anything that is not a recognized command will be broadcasted to the game server
         if line == '':
             return        
         self.plugin.console.console(line)
-        args = line.split(' ')
+        args = line.split(' ', 1)
         command = args[0].strip().lower()
-        args = args[1:]
-
-        if command in ('help', '/help'):
-            self.client.message("\n\r".join(self.help.split("\n")))
-        elif command == '/quit':
-            self.client.message('OK, SEE YOU LATER')
-            return TELNET_QUIT
-        elif command == '/sessions':
-            for k, v in self.plugin.telnetSessions.iteritems():
-                self.client.message("[%s] %s:%s" % (k, v.client_address[0], v.client_address[1]))
-        elif command == '/bans':
-            if len(self.server.banlist)==0:
-                self.client.message("no active ban")
-            else:
-                for ip, timestamp in self.server.banlist.iteritems():
-                    delta = datetime.fromtimestamp(timestamp) - datetime.now()
-                    delta_rounded = timedelta(seconds=delta.seconds)
-                    self.client.message("%s banned for %s" % (ip, delta_rounded))
+        if len(args)>1:
+            arg = args[1]
+        else:
+            arg = ''
+            
+        cmd_funcname = 'cmd_' + command[1:]
+        if command == 'help':
+            return self.cmd_help(arg)
+        elif command == 'quit':
+            return self.cmd_quit(arg)
+        elif command[0] == '/' and hasattr(self, cmd_funcname):
+            func = getattr(self, cmd_funcname)
+            return func(arg)
         elif line[0] in ('!','#'):
             adminPlugin = self.plugin.console.getPlugin('admin')
             adminPlugin.OnSay(self.plugin.console.getEvent('EVT_CLIENT_PRIVATE_SAY', line, self.client))
         else:
             self.plugin.console.say("[%s] %s" %(self.client.name, line))
 
-
+    def cmd_help(self, arg):
+        self.client.message("\n\r".join(self.help.split("\n")))
+        
+    def cmd_quit(self, arg):
+        self.client.message('OK, SEE YOU LATER')
+        return TELNET_QUIT
+        
+    def cmd_whoami(self, arg):
+        self.client.message(self.client.name)
+        
+    def cmd_name(self, arg):
+        newname = arg.strip()
+        if len(newname)<2:
+            self.client.message("new name is too short")
+        else:
+            self.client.name = newname
+        
+    def cmd_who(self, arg):
+        for sid, session in self.plugin.telnetSessions.iteritems():
+            if session.client:
+                tmp = datetime.now() - self.client.connection_datetime
+                since = timedelta(seconds=int(tmp.total_seconds()))
+                data = {
+                    'sid': sid,
+                    'name': session.client.name,
+                    'group': session.client.maxGroup.name if session.client.authed else 'non authenticated',
+                    'ip': session.client_address[0],
+                    'port': session.client_address[1],
+                    'since': since,
+                }
+                self.client.message("[%(sid)s] \"%(name)s\" (%(group)s) from %(ip)s:%(port)s since %(since)s" % data)
+            else:
+                self.client.message("[%s] %s:%s" % (sid, session.client_address[0], session.client_address[1]))
+        
+    def cmd_bans(self, arg):
+        if len(self.server.banlist)==0:
+            self.client.message("no active ban")
+        else:
+            for ip, timestamp in self.server.banlist.iteritems():
+                delta = datetime.fromtimestamp(timestamp) - datetime.now()
+                delta_rounded = timedelta(seconds=int(delta.total_seconds()))
+                self.client.message("%s banned for %s" % (ip, delta_rounded))
+        
+        
+        
 if __name__ == '__main__':
     from b3.fake import fakeConsole, joe, moderator
     conf1 = b3.config.XmlConfigParser()

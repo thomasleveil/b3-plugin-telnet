@@ -33,6 +33,10 @@ Changelog
 2011-06-08 - 1.1
 * add message of the day
 * resolve ip to domain name upon connection
+2011-06-09 - 1.2
+* refactor TelnetAuthenticatedCommandProcessor so it is easier to add new commands
+* add /who /name
+
 
 
 Support
