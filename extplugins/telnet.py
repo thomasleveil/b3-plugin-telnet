@@ -26,17 +26,19 @@
 # 1.2 - 2011-06-09
 #    * refactor TelnetAuthenticatedCommandProcessor so it is easier to add new commands
 #    * add /who /name
+# 1.3 - 2011-06-09
+#    * refactor
+#    * now telnet users authenticate using their B3 account (password must be set)
+#    * add commands !tlist and !tkick
 #
-__version__ = '1.2'
+__version__ = '1.3'
 __author__    = 'Courgette'
-from ConfigParser import NoOptionError, ConfigParser
-from b3.clients import Client
+from ConfigParser import NoOptionError
 from datetime import datetime, timedelta
 import SocketServer
 import b3
 import b3.events
 import b3.plugin
-import logging
 import os
 import re
 import select
@@ -46,21 +48,16 @@ import thread
 import threading
 import time
 import traceback
+from b3.clients import Client
 
-
-TELNET_QUIT = object()
-TELNET_AUTHENTICATED = object()
 TELNET_BANTIME_SECONDS = 60*2
 RE_COLOR = re.compile(r'(\^[0-9])')
 #--------------------------------------------------------------------------------------------------
 class TelnetPlugin(b3.plugin.Plugin):
-    client = None
     telnetIp = None
     telnetPort = None
     telnetService = None
-    telnetGroup = None
-    _telnetSessionsID = 0
-    telnetSessions = {}
+    telnetClients = None
     
     def onLoadConfig(self):
         # get the admin plugin so we can register commands
@@ -70,39 +67,6 @@ class TelnetPlugin(b3.plugin.Plugin):
             self.error('Could not find admin plugin')
             self.disable()
             return
-        
-        # credit : http://passwordadvisor.com/CodePython.aspx
-        strength = ['Blank','Very Weak','Weak','Medium','Strong','Very Strong']
-        def checkPassword(password):
-            score = 1
-        
-            if len(password) < 1:
-                return 0
-            
-            if password.lower() in ('changethis', 'pass', 'password', 'test', 
-                                    '123', '1234', '12345', '123456', '1324567', 
-                                    '13245678', '132456789', 'iloveyou', 
-                                    'princess', 'rockyou', 'abc123', '123abc', 
-                                    'qwerty', 'azerty', 'monkey' ):
-                return 1
-            
-            if len(password) < 4:
-                return 1
-        
-            if len(password) >=8:
-                score = score + 1
-            if len(password) >=11:
-                score = score + 1
-            
-            if re.search('\d+',password):
-                score = score + 1
-            if re.search('[a-z]',password) and re.search('[A-Z]',password):
-                score = score + 1
-            if re.search('.[!,@,#,$,%,^,&,*,?,_,~,-,�,(,)]',password):
-                score = score + 1
-        
-            return score
-                
         
         # load Metabans_account
         self.allGoodToStart = True
@@ -115,18 +79,6 @@ class TelnetPlugin(b3.plugin.Plugin):
             self.telnetIp = '0.0.0.0'
             
         try:
-            tmp = self.config.get('general_preferences', 'admin_level')
-            self.telnetGroup = self.console.storage.getGroup(b3.clients.Group(keyword=tmp))
-        except KeyError, err:
-            self.allGoodToStart = False
-            self.error('invalid group %s. Pick on of : guest, user, reg, mod, admin, fulladmin, senioradmin, superadmin.' % tmp)
-        except NoOptionError:
-            self.info('no admin_level found in the general_preferences section of the config file. using default : moderator')
-        if self.telnetGroup is None:
-            self.telnetGroup = self.console.storage.getGroup(b3.clients.Group(keyword='mod'))
-        self.info("Telnet admins will have group : %s (%s)" % (self.telnetGroup.name, self.telnetGroup.level))
-            
-        try:
             self.telnetPort = self.config.getint('general_preferences', 'port')
         except ValueError:
             self.allGoodToStart = False
@@ -134,27 +86,36 @@ class TelnetPlugin(b3.plugin.Plugin):
         except NoOptionError:
             self.allGoodToStart = False
             self.error('no port found in the general_preferences section of the config file. You need to set the port for the Telnet plugin to work')
-            
-        try:
-            self.telnetPassword = self.config.get('general_preferences', 'password')
-            score = checkPassword(self.telnetPassword)
-            if score < 3:
-                self.allGoodToStart = False                
-                self.error("your Telnet password is strength is : %s. Choose a stronger one" % strength[score])
-        except NoOptionError:
-            self.allGoodToStart = False                
-            self.error('no password found in the general_preferences section of the config file. You need to set the password for the Telnet plugin to work')
 
         if not self.allGoodToStart:
             self.disable()
-            
+        
+        if 'commands' in self.config.sections():
+            for cmd in self.config.options('commands'):
+                level = self.config.get('commands', cmd)
+                sp = cmd.split('-')
+                alias = None
+                if len(sp) == 2:
+                    cmd, alias = sp
 
+                func = self._getCmd(cmd)
+                if func:
+                    self._adminPlugin.registerCommand(self, cmd, level, func, alias)
+
+    def _getCmd(self, cmd):
+        cmd = 'cmd_%s' % cmd
+        if hasattr(self, cmd):
+            func = getattr(self, cmd)
+            return func
 
     def onStartup(self):
         if not self.allGoodToStart:
             self.info("Not starting Telnet service")
             return
         
+        self.telnetClients = b3.clients.Clients(self.console)
+        self.telnetClients.newClient = self._newClient
+        self.telnetClients.disconnect = self._disconnect
         
         self.console.createEvent('EVT_CONSOLE_SAY', "console say")
         self.console.createEvent('EVT_CONSOLE_SAYBIG', "console bigsay")
@@ -195,23 +156,144 @@ class TelnetPlugin(b3.plugin.Plugin):
         elif event.type in self.forwarded_events:
             thread.start_new_thread(self._dispatchEvent, (event,))
 
-    def addTelnetSession(self, listener):
-        if not listener in self.telnetSessions:
-            self._telnetSessionsID += 1
-            self.telnetSessions[self._telnetSessionsID] = listener
-    
-    def removeTelnetSession(self, listener):
-        for k in self.telnetSessions.keys():
-            if self.telnetSessions[k] is listener:
-                del self.telnetSessions[k]
+    #===============================================================================
+    # 
+    #    Commands implementations
+    #
+    #===============================================================================
 
+    def cmd_telnetlist(self, data, client, cmd=None):
+        """\
+        Show connected telnet users
+        """        
+        response = []
+        for k, v in self.telnetClients.iteritems():
+            tmp = datetime.now() - v.connection_datetime
+            since = timedelta(seconds=int(tmp.total_seconds()))
+            response.append("[%s] %s from %s since %s" % (k, v.name, v.cid, since))
+        cmd.sayLoudOrPM(client, ', '.join(response))
+
+    def cmd_telnetkick(self, data, client, cmd=None):
+        """\
+        <telnet session id> - kick a telnet user
+        """        
+        m = self._adminPlugin.parseUserCmd(data)
+        if not m:
+            client.message('^7Invalid parameters')
+            return False
+
+        cid, keyword = m
+        reason = self._adminPlugin.getReason(keyword)
+
+        if not reason and client.maxLevel < self._adminPlugin.config.getint('settings', 'noreason_level'):
+            client.message('^1ERROR: ^7You must supply a reason')
+            return False
+
+        sclient = self.findClientPrompt(cid, client)
+        if sclient:
+            if sclient.cid == client.cid:
+                self.console.say(self._adminPlugin.getMessage('kick_self', client.exactName))
+            elif sclient.maxLevel >= client.maxLevel:
+                if sclient.maskGroup:
+                    client.message('^7%s ^7is a masked higher level player, can\'t kick' % client.exactName)
+                else:
+                    self.console.say(self._adminPlugin.getMessage('kick_denied', sclient.exactName, client.exactName, sclient.exactName))
+            else:
+                if reason:
+                    sclient.message("you were kicked by %s (@%s) : %s" % (client.name, client.id, reason))
+                else:
+                    sclient.message("you were kicked by %s (@%s)" % (client.name, client.id))
+                sclient.session.working = False
+                sclient.session.server.shutdown_request(sclient.session.request)
+
+    #===============================================================================
+    # 
+    #    others
+    #
+    #===============================================================================
+
+    def findClientPrompt(self, client_id, client=None):
+        matches = self.telnetClients.getByMagic(client_id)
+        if matches:
+            if len(matches) > 1:
+                names = []
+                for _p in matches:
+                    names.append('[^2%s^7] %s' % (_p.cid, _p.name))
+
+                if client:
+                    client.message(self._adminPlugin.getMessage('players_matched', client_id, ', '.join(names)))
+                return False
+            else:
+                return matches[0]
+        else:
+            if client:
+                client.message(self._adminPlugin.getMessage('no_players', client_id))
+            return None
+
+    #===============================================================================
+    # 
+    # managing telnet sessions
+    #
+    #===============================================================================
+
+    def _newClient(self, client):
+        me = self.telnetClients
+        client.cid = len(me) + 1
+        client.console = me.console
+        client.timeAdd = me.console.time()
+        client.connection_datetime = datetime.now()
+        client.authed = True
+        
+        me[client.cid] = client
+        me.resetIndex()
+        self.debug('Telnet Client Connected: [%s] %s - %s', client.cid, client.name, client.ip)
+        return client
+    
+    def _disconnect(self, client):
+        me = self.telnetClients
+        client.connected = False
+        if client.cid == None:
+            return
+        cid = client.cid
+        if me.has_key(cid):
+            me[cid] = None
+            del me[cid]
+            del client
+        me.resetIndex()
+    
     def _dispatchEvent(self, event):
         try:
-            for k in self.telnetSessions.keys():
-                self.telnetSessions[k].onB3Event(event)
+            for k in self.telnetClients.keys():
+                self._onB3Event(self.telnetClients[k], event)
         except:
             self.exception(sys.exc_info())
 
+
+    def _onB3Event(self, client, event):
+        if event.type == b3.events.eventManager.getId('EVT_CLIENT_SAY'):
+            client.message("  %s: %s" % (event.client.name, event.data))
+        if event.type == b3.events.eventManager.getId('EVT_CONSOLE_SAY'):
+            client.message("  console: %s" % event.data)
+        if event.type == b3.events.eventManager.getId('EVT_CONSOLE_SAYBIG'):
+            client.message("  CONSOLE: %s" % event.data)
+        if event.type == b3.events.eventManager.getId('EVT_CLIENT_CONNECT'):
+            client.message("  client connection : %s" % event.client)
+        if event.type == b3.events.eventManager.getId('EVT_CLIENT_DISCONNECT'):
+            client.message("  client disconnection : %s" % event.data)
+        if event.type == b3.events.eventManager.getId('EVT_CLIENT_NAME_CHANGE'):
+            client.message("  %s renamed to %s" % (event.client, event.data))
+        if event.type == b3.events.eventManager.getId('EVT_CLIENT_KICK'):
+            client.message("  %s kicked (%r)" % (event.client, event.data))
+        if event.type == b3.events.eventManager.getId('EVT_CLIENT_BAN'):
+            client.message("  %s banned (%r)" % (event.client, event.data))
+        if event.type == b3.events.eventManager.getId('EVT_CLIENT_BAN_TEMP'):
+            client.message("  %s tempbanned (%r)" % (event.client, event.data))
+        if event.type == b3.events.eventManager.getId('EVT_CLIENT_UNBAN'):
+            client.message("  %s unbanned (%r)" % (event.client, event.data))
+        if event.type == b3.events.eventManager.getId('EVT_GAME_ROUND_START'):
+            client.message("  round started %s" % event.data)
+        if event.type == b3.events.eventManager.getId('EVT_GAME_MAP_CHANGE'):
+            client.message("  map change %s" % event.data)
 
 class TelnetServiceThread(threading.Thread):
     def __init__(self, plugin, ip, port):
@@ -262,40 +344,26 @@ class TelnetServer(SocketServer.ThreadingTCPServer):
     
 
 class TelnetRequestHandler(SocketServer.BaseRequestHandler):
-    authed = False
+    client = None
+    processor = None
+    working = True
 
     def setup(self):
         plugin = self.server.plugin
         plugin.info("telnet client connecting from %s:%s" % self.client_address)
         plugin.info("%r", socket.gethostbyaddr(self.client_address[0]))
-        
-        plugin.addTelnetSession(self)
-        
-        self.client = plugin.console.clients.newClient(cid="(%s:%s)" % self.client_address, name="remote admin (%s:%s)" % self.client_address, groupBits=0, hide=True)
-        self.client.connection_datetime = datetime.now()
-        
-        # change Client.message() method so any message B3 would like to be
-        # sent to that fake client as PM is redirected to this telnet session.
-        # Also remove Quake3 color codes
-        def message(msg):
-            self.request.send("%s\n\r" % re.sub(RE_COLOR, '', msg).strip())
-        self.client.message = message
-        
-        self.password_retries = 0
-        
 
     def handle(self):
         plugin = self.server.plugin
 
         self.request.send("HELLO from B3 Telnet plugin v%s\n\r" % __version__)
-        self.request.send("enter your password: ")
-        
-        processor = TelnetCommandProcessor(plugin, self.client, self.server)
+        self.processor = TelnetAuthProcessor(self)
+        self.request.send("user id : ")
+                            
         ready_to_read, ready_to_write, in_error = select.select([self.request], [], [], None)
         text = ''
         try:
-            done = False
-            while not done:
+            while self.working:
                 if len(ready_to_read) == 1 and ready_to_read[0] == self.request:
                     data = self.request.recv(1024)
         
@@ -307,75 +375,54 @@ class TelnetRequestHandler(SocketServer.BaseRequestHandler):
                         while text.find("\n") != -1:
                             line, text = text.split("\n", 1)
                             line = line.rstrip()
-        
                             try:
-                                result = None
-                                result = processor.process(line, self.request)
+                                self.processor.process(line)
+                            except TelnetCloseSession:
+                                self.working = False
                             except:
                                 lines = traceback.format_exc().splitlines()
                                 self.request.send(lines[-1] + "\n\r")
                                 plugin.error("%s", lines)
                                 raise
-                            
-                            if result == TELNET_QUIT:
-                                done = True
-                                break
-                            elif result == TELNET_AUTHENTICATED:
-                                self.client.authed = True # make B3 believe this client is authenticated so it can issue commands
-                                self.client.groupBits = plugin.telnetGroup.id
-                                self.authed = True
-                                processor = TelnetAuthenticatedCommandProcessor(plugin, self.client, self.server)
-                                self._displayMOTD()
-                                self.request.send("type 'help' to have a list of available commands\n\r")
-                            elif not self.authed:
-                                self.password_retries += 1
-                                if self.password_retries < 3:
-                                    time.sleep(2)
-                                    self.request.send("enter your password: ")
-                                else:
-                                    if self.client_address[0] != '127.0.0.1':
-                                        self.request.send("your are banned\n\r")
-                                        self.server.ban(self.client_address[0])
-                                    self.request.close()
         
         except socket.timeout:
             plugin.info("socket timeout")
             pass
         self.request.close()
-        self.client.disconnect()
 
 
-    def onB3Event(self, event):
-        if not self.authed or not self.client:
-            return
-        if event.type == b3.events.eventManager.getId('EVT_CLIENT_SAY'):
-            self.client.message("  %s: %s" % (event.client.name, event.data))
-        if event.type == b3.events.eventManager.getId('EVT_CONSOLE_SAY'):
-            self.client.message("  console: %s" % event.data)
-        if event.type == b3.events.eventManager.getId('EVT_CONSOLE_SAYBIG'):
-            self.client.message("  CONSOLE: %s" % event.data)
-        if event.type == b3.events.eventManager.getId('EVT_CLIENT_CONNECT'):
-            self.client.message("  client connection : %s" % event.client)
-        if event.type == b3.events.eventManager.getId('EVT_CLIENT_DISCONNECT'):
-            self.client.message("  client disconnection : %s" % event.data)
-        if event.type == b3.events.eventManager.getId('EVT_CLIENT_NAME_CHANGE'):
-            self.client.message("  %s renamed to %s" % (event.client, event.data))
-        if event.type == b3.events.eventManager.getId('EVT_CLIENT_KICK'):
-            self.client.message("  %s kicked (%r)" % (event.client, event.data))
-        if event.type == b3.events.eventManager.getId('EVT_CLIENT_BAN'):
-            self.client.message("  %s banned (%r)" % (event.client, event.data))
-        if event.type == b3.events.eventManager.getId('EVT_CLIENT_BAN_TEMP'):
-            self.client.message("  %s tempbanned (%r)" % (event.client, event.data))
-        if event.type == b3.events.eventManager.getId('EVT_CLIENT_UNBAN'):
-            self.client.message("  %s unbanned (%r)" % (event.client, event.data))
-        if event.type == b3.events.eventManager.getId('EVT_GAME_ROUND_START'):
-            self.client.message("  round started %s" % event.data)
-        if event.type == b3.events.eventManager.getId('EVT_GAME_MAP_CHANGE'):
-            self.client.message("  map change %s" % event.data)
+    def onClientAuthenticated(self, client):
+        for c in self.server.plugin.telnetClients.values():
+            if c.id == client.id:
+                client.message("There is already an other telnet session for that account from %s" % c.ip)
+                client.message("Cannot connect. Bye")
+                raise TelnetCloseSession("Account already in use")
+
+        client.session = self
+        self.client = self.server.plugin.telnetClients.newClient(client)
+        
+        # change Client.message() method so any message B3 would like to be
+        # sent to that fake client as PM is redirected to this telnet session.
+        # Also remove Quake3 color codes
+        def message(msg):
+            self.request.send("%s\n\r" % re.sub(RE_COLOR, '', msg).strip())
+        client.message = message
             
+        client.ip = self.client_address[0]
+
+        self.processor = TelnetCommandProcessor(self)
+        self._displayMOTD()
+        self.request.send("type 'help' to have a list of available commands\n\r")
+
+
+    def onClientAuthenticationFailed(self):
+        if self.client_address[0] != '127.0.0.1':
+            self.request.send("your are banned\n\r")
+            self.server.ban(self.client_address[0])
+        raise TelnetCloseSession("Too many tries")
 
     def finish(self):
-       self.server.plugin.removeTelnetSession(self)
+        self.server.plugin.telnetClients.disconnect(self.client)
 
     def _displayMOTD(self):
         plugin = self.server.plugin
@@ -390,19 +437,79 @@ class TelnetRequestHandler(SocketServer.BaseRequestHandler):
         except NoOptionError:
             pass
 
-class TelnetCommandProcessor(object):
-    def __init__(self, plugin, client, server):
-        self.server = server
-        self.plugin = plugin
-        self.client = client
+class TelnetCloseSession(Exception):
+    pass
+
+class TelnetLineProcessor(object):
+    def __init__(self, request_handler):
+        self.request_handler = request_handler
+        self.plugin = request_handler.server.plugin
+        self.server = request_handler.server
+        self.request = request_handler.request
+    
+    def process(self, line):
+        """act upon a line received from the telnet client.
         
-    def process(self, line, request):
-        """Process a command"""
-        if line == self.plugin.telnetPassword:
-            request.send('\n\rauthenticated\n\r')
-            return TELNET_AUTHENTICATED
-            
-class TelnetAuthenticatedCommandProcessor(TelnetCommandProcessor):
+        Should raise a TelnetCloseSession Exception to close the session with
+        the current telnet client
+        """
+        raise NotImplementedError
+
+class TelnetAuthProcessor(TelnetLineProcessor):
+    """line processor responsible for obtaining a Client object from a
+    user id or login and a user password.
+    
+    On success, send the client object to request_handler.onClientAuthenticated
+    or After 3 failed attempts, call request_handler.onClientAuthenticationFailed
+    """
+    userid = None
+    password_retries = 0
+
+    def process(self, line):
+        if self.userid is None:
+            self._get_user_id(line)
+        else:
+            self._get_password(line)
+
+    def _get_password(self, line):
+        client = self._fetch_client(line)
+        if client:
+            self.request_handler.onClientAuthenticated(client) 
+        else:
+            self.userid = None
+            self.password_retries += 1
+            if self.password_retries < 3:
+                time.sleep(2)
+                self.request.send("bad user id or password\n\r")
+                self.request.send("user id : ")
+            else:
+                self.request_handler.onClientAuthenticationFailed()
+
+
+    def _get_user_id(self, line):
+        if line != '':
+            self.userid = line
+            self.request.send("password : ")
+        else:
+            self.request.send("user id : ")
+
+
+    def _fetch_client(self, password):
+        client = None
+        
+        clientMatcher = {'password': password}
+        try:
+            clientMatcher['id'] = int(self.userid)
+        except ValueError:
+            clientMatcher['login'] = self.userid
+        
+        results = self.plugin.console.storage.getClientsMatching(clientMatcher)
+        if len(results)==1:
+            client = results[0]
+        return client
+
+
+class TelnetCommandProcessor(TelnetLineProcessor):
     help = """available commands :
   /quit, quit      : terminate the telnet session
   /whoami          : display your name
@@ -414,11 +521,15 @@ class TelnetAuthenticatedCommandProcessor(TelnetCommandProcessor):
 anything that is not a recognized command will be broadcasted to the game server chat
 """
 
-    def process(self, line, request):
+    def __init__(self, request_handler):
+        TelnetLineProcessor.__init__(self, request_handler)
+        self.client = request_handler.client
+    
+    def process(self, line):
         """Process a command"""
         if line == '':
             return        
-        self.plugin.console.console(line)
+        self.plugin.console.console("%s\t: %s", self.client.cid, line)
         args = line.split(' ', 1)
         command = args[0].strip().lower()
         if len(args)>1:
@@ -434,6 +545,8 @@ anything that is not a recognized command will be broadcasted to the game server
         elif command[0] == '/' and hasattr(self, cmd_funcname):
             func = getattr(self, cmd_funcname)
             return func(arg)
+        elif command == '!iamgod':
+            self.client.message("There is no god down here")
         elif line[0] in ('!','#'):
             adminPlugin = self.plugin.console.getPlugin('admin')
             adminPlugin.OnSay(self.plugin.console.getEvent('EVT_CLIENT_PRIVATE_SAY', line, self.client))
@@ -445,12 +558,12 @@ anything that is not a recognized command will be broadcasted to the game server
         
     def cmd_quit(self, arg):
         self.client.message('OK, SEE YOU LATER')
-        return TELNET_QUIT
+        raise TelnetCloseSession()
         
     def cmd_whoami(self, arg):
-        self.client.message("%s @%s %s [%s]" % (
-                                                     self.client.name,
+        self.client.message("@%s \"%s\" %s [%s]" % (
                                                      self.client.id,
+                                                     self.client.name,
                                                      self.client.cid,
                                                      self.client.maxGroup.name                                                     
                                                      ))
@@ -463,21 +576,20 @@ anything that is not a recognized command will be broadcasted to the game server
             self.client.name = newname
         
     def cmd_who(self, arg):
-        for sid, session in self.plugin.telnetSessions.iteritems():
-            if session.client:
-                tmp = datetime.now() - self.client.connection_datetime
+        for sid, client in self.plugin.telnetClients.iteritems():
+            if client:
+                tmp = datetime.now() - client.connection_datetime
                 since = timedelta(seconds=int(tmp.total_seconds()))
                 data = {
                     'sid': sid,
-                    'name': session.client.name,
-                    'group': session.client.maxGroup.name if session.client.authed else 'non authenticated',
-                    'ip': session.client_address[0],
-                    'port': session.client_address[1],
+                    'id': client.id,
+                    'name': client.name,
+                    'group': client.maxGroup.name,
+                    'ip': client.session.client_address[0],
+                    'port': client.session.client_address[1],
                     'since': since,
                 }
-                self.client.message("[%(sid)s] \"%(name)s\" (%(group)s) from %(ip)s:%(port)s since %(since)s" % data)
-            else:
-                self.client.message("[%s] %s:%s" % (sid, session.client_address[0], session.client_address[1]))
+                self.client.message("[%(sid)s] @%(id)s \"%(name)s\" (%(group)s) from %(ip)s:%(port)s since %(since)s" % data)
         
     def cmd_bans(self, arg):
         if len(self.server.banlist)==0:
@@ -491,9 +603,11 @@ anything that is not a recognized command will be broadcasted to the game server
         
         
 if __name__ == '__main__':
-    from b3.fake import fakeConsole, joe, moderator
-    from b3.storage.database import DatabaseStorage
-    fakeConsole.storage =  DatabaseStorage("sqlite://c:/tmp/b3.sqlite", fakeConsole)
+    from b3.fake import joe, moderator, superadmin, fakeConsole
+    
+    #from b3.storage.database import DatabaseStorage
+    #fakeConsole.storage =  DatabaseStorage("sqlite://c:/tmp/b3.sqlite", fakeConsole)
+    
     conf1 = b3.config.XmlConfigParser()
     conf1.loadFromString("""<configuration plugin="telnet">
     <settings name="general_preferences">
@@ -506,22 +620,18 @@ if __name__ == '__main__':
         will listen on all available network interfaces -->
         <set name="port">27111</set>
         
-        <!-- The password to use the telnet service -->
-    <set name="password">321321321</set>
-        
-        <!-- The B3 group tha telnet admins belong to. 
-        Specify the group keyword : 
-              guest, user, reg, mod, admin, fulladmin, senioradmin, superadmin -->
-        <set name="admin_level">superadmin</set> 
-           
         <!-- specify a Message Of The Day file that content will be displayed
         to authenticated users -->
         <set name="motd">c:/tmp/telnet_motd.txt</set>
     </settings>
+    <settings name="commands">
+        <set name="telnetkick-tkick">80</set>
+        <set name="telnetlist-tlist">20</set>
+    </settings>
 </configuration>
 """)
     
-    
+    from b3.querybuilder import QueryBuilder
     from getopt import getopt
     server_ip = server_port = None
     opts, args = getopt(sys.argv[1:], 'h:p:')
@@ -537,7 +647,17 @@ if __name__ == '__main__':
     p.onStartup()
 
     joe.connects(0)
+    fakeConsole.storage.query(QueryBuilder(fakeConsole.storage.db).UpdateQuery({'login': 'iamjoe', 'password': 'pass'}, 'clients', { 'id' : joe.id }))
+    print "Joe id : %s" % joe.id
+    
     moderator.connects(1)
+    fakeConsole.storage.query(QueryBuilder(fakeConsole.storage.db).UpdateQuery({'password': 'test'}, 'clients', { 'id' : moderator.id }))
+    print "Moderator id : %s" % moderator.id
+    
+    superadmin.auth()
+    fakeConsole.storage.query(QueryBuilder(fakeConsole.storage.db).UpdateQuery({'password': 'test'}, 'clients', { 'id' : superadmin.id }))
+    print "superadmin id : %s" % superadmin.id
+    
     
     time.sleep(10)
     joe.says("what's up ?")

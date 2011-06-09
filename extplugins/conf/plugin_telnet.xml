@@ -9,16 +9,12 @@
 		will listen on all available network interfaces -->
 		<set name="port">30300</set>
 		
-		<!-- The password to use the telnet service -->
-    <set name="password">changethis</set>
-		
-		<!-- The B3 group tha telnet admins belong to. 
-    Specify the group keyword : 
-		  guest, user, reg, mod, admin, fulladmin, senioradmin, superadmin -->
-    <set name="admin_level">admin</set>
-    
     <!-- specify a Message Of The Day file that content will be displayed
     to authenticated users -->
     <set name="motd">@conf/telnet_motd.txt</set>
+	</settings>
+	<settings name="commands">
+    <set name="telnetkick-tkick">80</set>
+    <set name="telnetlist-tlist">20</set>
 	</settings>
 </configuration>
