@@ -28,14 +28,22 @@ Installation
 Changelog
 ---------
 
-2011-06-08 - 1.0
-* first release
-2011-06-08 - 1.1
-* add message of the day
-* resolve ip to domain name upon connection
-2011-06-09 - 1.2
-* refactor TelnetAuthenticatedCommandProcessor so it is easier to add new commands
-* add /who /name
+1.0 - 2011-06-08
+  * first release
+  
+1.1 - 2011-06-08
+  * add message of the day
+  * resolve ip to domain name upon connection
+
+1.2 - 2011-06-09
+  * refactor TelnetAuthenticatedCommandProcessor so it is easier to add new commands
+  * add /who /name
+
+1.3 - 2011-06-09
+  * refactor
+  * now telnet users authenticate using their B3 account (password must be set) 
+    use phpmyadmin or the password plugin : https://github.com/xlr8or/b3-plugin-password
+  * add commands !tlist and !tkick
 
 
 
