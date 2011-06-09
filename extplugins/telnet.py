@@ -175,7 +175,6 @@ class TelnetPlugin(b3.plugin.Plugin):
 
         original_say = self.console.say
         def _say(msg):
-            self.debug("----------------> %s" % msg)
             self.console.queueEvent(self.console.getEvent('EVT_CONSOLE_SAY', msg))
             original_say(msg)
         self.console.say = _say
@@ -253,7 +252,7 @@ class TelnetServer(SocketServer.ThreadingTCPServer):
         newbanlist = {}
         for ip, timestamp in self._banlist.iteritems():
             if timestamp > time.time():
-                 newbanlist[ip] = timestamp
+                newbanlist[ip] = timestamp
         self._banlist = newbanlist
         return self._banlist
         
@@ -310,11 +309,14 @@ class TelnetRequestHandler(SocketServer.BaseRequestHandler):
                             line = line.rstrip()
         
                             try:
+                                result = None
                                 result = processor.process(line, self.request)
                             except:
-                                for line in traceback.format_exc().splitlines():
-                                    self.request.send(line + "\n\r")
-
+                                lines = traceback.format_exc().splitlines()
+                                self.request.send(lines[-1] + "\n\r")
+                                plugin.error("%s", lines)
+                                raise
+                            
                             if result == TELNET_QUIT:
                                 done = True
                                 break
@@ -337,13 +339,14 @@ class TelnetRequestHandler(SocketServer.BaseRequestHandler):
                                     self.request.close()
         
         except socket.timeout:
+            plugin.info("socket timeout")
             pass
         self.request.close()
         self.client.disconnect()
 
 
     def onB3Event(self, event):
-        if not self.authed:
+        if not self.authed or not self.client:
             return
         if event.type == b3.events.eventManager.getId('EVT_CLIENT_SAY'):
             self.client.message("  %s: %s" % (event.client.name, event.data))
@@ -445,7 +448,12 @@ anything that is not a recognized command will be broadcasted to the game server
         return TELNET_QUIT
         
     def cmd_whoami(self, arg):
-        self.client.message(self.client.name)
+        self.client.message("%s @%s %s [%s]" % (
+                                                     self.client.name,
+                                                     self.client.id,
+                                                     self.client.cid,
+                                                     self.client.maxGroup.name                                                     
+                                                     ))
         
     def cmd_name(self, arg):
         newname = arg.strip()
@@ -484,6 +492,8 @@ anything that is not a recognized command will be broadcasted to the game server
         
 if __name__ == '__main__':
     from b3.fake import fakeConsole, joe, moderator
+    from b3.storage.database import DatabaseStorage
+    fakeConsole.storage =  DatabaseStorage("sqlite://c:/tmp/b3.sqlite", fakeConsole)
     conf1 = b3.config.XmlConfigParser()
     conf1.loadFromString("""<configuration plugin="telnet">
     <settings name="general_preferences">
@@ -511,7 +521,19 @@ if __name__ == '__main__':
 </configuration>
 """)
     
+    
+    from getopt import getopt
+    server_ip = server_port = None
+    opts, args = getopt(sys.argv[1:], 'h:p:')
+    for k, v in opts:
+        if k == '-h':
+            server_ip = v
+        elif k == '-p':
+            server_port = int(v)
+    
     p = TelnetPlugin(fakeConsole, conf1)
+    if server_port: p.telnetPort = server_port 
+    if server_ip: p.telnetIp = server_ip 
     p.onStartup()
 
     joe.connects(0)
