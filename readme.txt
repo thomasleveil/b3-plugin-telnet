@@ -45,6 +45,10 @@ Changelog
     use phpmyadmin or the password plugin : https://github.com/xlr8or/b3-plugin-password
   * add commands !tlist and !tkick
 
+1.4 - 2011-06-10
+  * properly decode telnet packets
+  * assume password are hashed through md5 in db
+
 
 
 Support
