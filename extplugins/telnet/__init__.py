@@ -33,8 +33,12 @@
 # 1.4 - 2011-06-10
 #    * properly decode telnet packets
 #    * assume password are hashed through md5 in db
+# 1.4.1 - 2011-06-11
+#    * when running the test, Ctrl-C properly ends the script
 #
-__version__ = '1.4'
+__version__ = '1.4.1'
+__author__    = 'Courgette'
+
 from ConfigParser import NoOptionError
 from b3.clients import Client
 from datetime import datetime, timedelta
@@ -47,7 +51,7 @@ import re
 import sys
 import thread
 import time
-__author__    = 'Courgette'
+
 
 
 #--------------------------------------------------------------------------------------------------
@@ -336,26 +340,30 @@ if __name__ == '__main__':
         elif k == '-p':
             server_port = int(v)
     
-    p = TelnetPlugin(fakeConsole, conf1)
-    if server_port: p.telnetPort = server_port 
-    if server_ip: p.telnetIp = server_ip 
-    p.onStartup()
+    try:
+        p = TelnetPlugin(fakeConsole, conf1)
+        if server_port: p.telnetPort = server_port 
+        if server_ip: p.telnetIp = server_ip 
+        p.onStartup()
 
-    joe.connects(0)
-    fakeConsole.storage.query(QueryBuilder(fakeConsole.storage.db).UpdateQuery({'login': 'iamjoe', 'password': md5('test').hexdigest()}, 'clients', { 'id' : joe.id }))
-    print "Joe id : %s" % joe.id
-    
-    moderator.connects(1)
-    fakeConsole.storage.query(QueryBuilder(fakeConsole.storage.db).UpdateQuery({'password': md5('test').hexdigest()}, 'clients', { 'id' : moderator.id }))
-    print "Moderator id : %s" % moderator.id
-    
-    superadmin.auth()
-    fakeConsole.storage.query(QueryBuilder(fakeConsole.storage.db).UpdateQuery({'password': md5('test').hexdigest(), 'login': 'superadmin'}, 'clients', { 'id' : superadmin.id }))
-    print "superadmin id : %s" % superadmin.id
-    
-    
-    time.sleep(10)
-    joe.says("what's up ?")
-    time.sleep(5)
-    moderator.says("having a beer and you ?")
-    while True: pass
+        joe.connects(0)
+        fakeConsole.storage.query(QueryBuilder(fakeConsole.storage.db).UpdateQuery({'login': 'iamjoe', 'password': md5('test').hexdigest()}, 'clients', { 'id' : joe.id }))
+        print "Joe id : %s" % joe.id
+
+        moderator.connects(1)
+        fakeConsole.storage.query(QueryBuilder(fakeConsole.storage.db).UpdateQuery({'password': md5('test').hexdigest()}, 'clients', { 'id' : moderator.id }))
+        print "Moderator id : %s" % moderator.id
+
+        superadmin.auth()
+        fakeConsole.storage.query(QueryBuilder(fakeConsole.storage.db).UpdateQuery({'password': md5('test').hexdigest(), 'login': 'superadmin'}, 'clients', { 'id' : superadmin.id }))
+        print "superadmin id : %s" % superadmin.id
+
+
+        time.sleep(10)
+        joe.says("what's up ?")
+        time.sleep(5)
+        moderator.says("having a beer and you ?")
+        while True: pass
+    except KeyboardInterrupt:
+        p.telnetService.stop()
+        

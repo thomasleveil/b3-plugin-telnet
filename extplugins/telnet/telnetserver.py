@@ -46,6 +46,7 @@ class TelnetServiceThread(threading.Thread):
         self.server = None
         
     def run(self):
+        self.plugin.info("Default socket timeout : %s" % socket.getdefaulttimeout())
         self.server = TelnetServer((self.ip, self.port), TelnetRequestHandler, self.plugin)
         self.plugin.info("listening on %s:%s", self.ip, self.port)
         self.server.serve_forever()
