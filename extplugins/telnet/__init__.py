@@ -36,7 +36,7 @@
 # 1.4.1 - 2011-06-11
 #    * when running the test, Ctrl-C properly ends the script
 #
-__version__ = '1.4.1'
+__version__ = '1.4.2'
 __author__    = 'Courgette'
 
 from ConfigParser import NoOptionError
@@ -127,7 +127,8 @@ class TelnetPlugin(b3.plugin.Plugin):
                            'EVT_CLIENT_DISCONNECT', 'EVT_CLIENT_NAME_CHANGE', 
                            'EVT_CLIENT_KICK', 'EVT_CLIENT_BAN', 
                            'EVT_CLIENT_BAN_TEMP', 'EVT_CLIENT_UNBAN', 
-                           'EVT_GAME_ROUND_START', 'EVT_GAME_MAP_CHANGE')
+                           'EVT_GAME_ROUND_START', 'EVT_GAME_MAP_CHANGE',
+                           'EVT_STOP', 'EVT_EXIT')
         
         self.forwarded_events = []
         for v in forwarded_events_names:
@@ -155,7 +156,7 @@ class TelnetPlugin(b3.plugin.Plugin):
     def onEvent(self, event):
         if event.type in (b3.events.EVT_STOP, b3.events.EVT_EXIT):
             self.telnetService.stop()
-        elif event.type in self.forwarded_events:
+        if event.type in self.forwarded_events:
             thread.start_new_thread(self._dispatchEvent, (event,))
 
     #===============================================================================
@@ -274,29 +275,30 @@ class TelnetPlugin(b3.plugin.Plugin):
 
 
     def _onB3Event(self, client, event):
-        if event.type == b3.events.eventManager.getId('EVT_CLIENT_SAY'):
-            client.message("  %s: %s" % (event.client.name, event.data))
-        if event.type == b3.events.eventManager.getId('EVT_CONSOLE_SAY'):
+        if event.type in (b3.events.eventManager.getId('EVT_EXIT'), 
+                  b3.events.eventManager.getId('EVT_STOP')):
+            client.disconnect()
+        elif event.type == b3.events.eventManager.getId('EVT_CONSOLE_SAY'):
             client.message("  console: %s" % event.data)
-        if event.type == b3.events.eventManager.getId('EVT_CONSOLE_SAYBIG'):
+        elif event.type == b3.events.eventManager.getId('EVT_CONSOLE_SAYBIG'):
             client.message("  CONSOLE: %s" % event.data)
-        if event.type == b3.events.eventManager.getId('EVT_CLIENT_CONNECT'):
+        elif event.type == b3.events.eventManager.getId('EVT_CLIENT_CONNECT'):
             client.message("  client connection : %s" % event.client)
-        if event.type == b3.events.eventManager.getId('EVT_CLIENT_DISCONNECT'):
+        elif event.type == b3.events.eventManager.getId('EVT_CLIENT_DISCONNECT'):
             client.message("  client disconnection : %s" % event.data)
-        if event.type == b3.events.eventManager.getId('EVT_CLIENT_NAME_CHANGE'):
+        elif event.type == b3.events.eventManager.getId('EVT_CLIENT_NAME_CHANGE'):
             client.message("  %s renamed to %s" % (event.client, event.data))
-        if event.type == b3.events.eventManager.getId('EVT_CLIENT_KICK'):
+        elif event.type == b3.events.eventManager.getId('EVT_CLIENT_KICK'):
             client.message("  %s kicked (%r)" % (event.client, event.data))
-        if event.type == b3.events.eventManager.getId('EVT_CLIENT_BAN'):
+        elif event.type == b3.events.eventManager.getId('EVT_CLIENT_BAN'):
             client.message("  %s banned (%r)" % (event.client, event.data))
-        if event.type == b3.events.eventManager.getId('EVT_CLIENT_BAN_TEMP'):
+        elif event.type == b3.events.eventManager.getId('EVT_CLIENT_BAN_TEMP'):
             client.message("  %s tempbanned (%r)" % (event.client, event.data))
-        if event.type == b3.events.eventManager.getId('EVT_CLIENT_UNBAN'):
+        elif event.type == b3.events.eventManager.getId('EVT_CLIENT_UNBAN'):
             client.message("  %s unbanned (%r)" % (event.client, event.data))
-        if event.type == b3.events.eventManager.getId('EVT_GAME_ROUND_START'):
+        elif event.type == b3.events.eventManager.getId('EVT_GAME_ROUND_START'):
             client.message("  round started %s" % event.data)
-        if event.type == b3.events.eventManager.getId('EVT_GAME_MAP_CHANGE'):
+        elif event.type == b3.events.eventManager.getId('EVT_GAME_MAP_CHANGE'):
             client.message("  map change %s" % event.data)
 
         
@@ -363,7 +365,8 @@ if __name__ == '__main__':
         joe.says("what's up ?")
         time.sleep(5)
         moderator.says("having a beer and you ?")
-        while True: pass
+        while True: 
+            pass
     except KeyboardInterrupt:
         p.telnetService.stop()
-        
+    print "*"*30

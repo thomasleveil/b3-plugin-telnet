@@ -49,7 +49,11 @@ Changelog
   * properly decode telnet packets
   * assume password are hashed through md5 in db
 
+1.4.1 - 2011-06-11
+  * when running the test, Ctrl-C properly ends the script
 
+1.4.1 - 2011-06-22
+  * better handling of B3 shutdown/restart
 
 Support
 -------

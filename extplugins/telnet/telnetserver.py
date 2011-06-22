@@ -53,6 +53,7 @@ class TelnetServiceThread(threading.Thread):
         
     def stop(self):
         if self.server:
+            self.plugin.info("requesting shutdown to telnet server")
             self.server.shutdown()
 
 
@@ -68,8 +69,32 @@ class TelnetServer(SocketServer.ThreadingTCPServer):
         self.plugin = plugin
         self._banlist = {}
 
+    def shutdown_requested(self):
+        return self._BaseServer__shutdown_request
+
     def verify_request(self, request, client_address):
         return client_address[0] not in self.banlist
+    
+    def handle_error(self, request, client_address):
+        """Handle an error gracefully.  May be overridden.
+
+        The default is to print a traceback and continue.
+
+        """
+        import sys
+        exception = sys.exc_info()
+        if exception[0] is SystemExit:
+            self.plugin.exception("%r" % (sys.exc_info(),))
+            self.plugin.info("telnet server catched SystemExit. Shuting down telnet server")
+            self.shutdown()
+            raise
+        else:
+            print '-'*40
+            print 'Exception happened during processing of request from',
+            print client_address
+            import traceback
+            traceback.print_exc() # XXX But this goes to stderr!
+            print '-'*40
     
     @property
     def banlist(self):
@@ -106,7 +131,7 @@ class TelnetRequestHandler(SocketServer.BaseRequestHandler):
         ready_to_read, ready_to_write, in_error = select.select([self.request], [], [], None)
         buffer = ''
         try:
-            while self.working:
+            while self.working and not self.server.shutdown_requested():
                 if len(ready_to_read) == 1 and ready_to_read[0] == self.request:
                     data = self.request.recv(1024)
         
@@ -125,6 +150,9 @@ class TelnetRequestHandler(SocketServer.BaseRequestHandler):
                                     self.processor.process(l)
                                 except TelnetCloseSession:
                                     self.working = False
+                                except SystemExit:
+                                    self.working = False
+                                    raise
                                 except:
                                     lines = traceback.format_exc().splitlines()
                                     self.request.send(lines[-1] + "\n\r")
