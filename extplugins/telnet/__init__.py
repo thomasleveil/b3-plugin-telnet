@@ -35,8 +35,12 @@
 #    * assume password are hashed through md5 in db
 # 1.4.1 - 2011-06-11
 #    * when running the test, Ctrl-C properly ends the script
+# 1.4.2 - 2011-06-22
+#    * better handling of B3 shutdown/restart
+# 1.4.3 - 2011-07-03
+#    * fix connection timeout issue
 #
-__version__ = '1.4.2'
+__version__ = '1.4.3'
 __author__    = 'Courgette'
 
 from ConfigParser import NoOptionError

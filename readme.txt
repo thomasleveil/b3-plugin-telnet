@@ -52,8 +52,12 @@ Changelog
 1.4.1 - 2011-06-11
   * when running the test, Ctrl-C properly ends the script
 
-1.4.1 - 2011-06-22
+1.4.2 - 2011-06-22
   * better handling of B3 shutdown/restart
+
+1.4.3 - 2011-07-03
+  * fix connection timeout issue
+
 
 Support
 -------

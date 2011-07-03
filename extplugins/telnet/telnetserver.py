@@ -85,7 +85,7 @@ class TelnetServer(SocketServer.ThreadingTCPServer):
         exception = sys.exc_info()
         if exception[0] is SystemExit:
             self.plugin.exception("%r" % (sys.exc_info(),))
-            self.plugin.info("telnet server catched SystemExit. Shuting down telnet server")
+            self.plugin.info("telnet server catched SystemExit. Shutting down telnet server")
             self.shutdown()
             raise
         else:
@@ -123,7 +123,7 @@ class TelnetRequestHandler(SocketServer.BaseRequestHandler):
 
     def handle(self):
         plugin = self.server.plugin
-
+        self.request.setblocking(1)
         self.request.send("HELLO from B3 Telnet plugin v%s\n\r" % __version__)
         self.processor = TelnetAuthProcessor(self)
         self.request.send("user id : ")
