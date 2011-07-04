@@ -57,6 +57,9 @@ Changelog
 
 1.4.3 - 2011-07-03
   * fix connection timeout issue
+  
+1.4.4 - 2011-07-04
+  * do not fail with gethostbyaddr
 
 
 Support
