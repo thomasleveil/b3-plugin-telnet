@@ -39,8 +39,10 @@
 #    * better handling of B3 shutdown/restart
 # 1.4.3 - 2011-07-03
 #    * fix connection timeout issue
+# 1.4.4 - 2011-07-04
+#    * do not fail with gethostbyaddr
 #
-__version__ = '1.4.3'
+__version__ = '1.4.4'
 __author__    = 'Courgette'
 
 from ConfigParser import NoOptionError

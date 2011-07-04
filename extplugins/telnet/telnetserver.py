@@ -119,7 +119,10 @@ class TelnetRequestHandler(SocketServer.BaseRequestHandler):
     def setup(self):
         plugin = self.server.plugin
         plugin.info("telnet client connecting from %s:%s" % self.client_address)
-        plugin.info("%r", socket.gethostbyaddr(self.client_address[0]))
+        try:
+            plugin.info("%r", socket.gethostbyaddr(self.client_address[0]))
+        except:
+            pass
 
     def handle(self):
         plugin = self.server.plugin
