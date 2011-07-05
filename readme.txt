@@ -60,6 +60,9 @@ Changelog
   
 1.4.4 - 2011-07-04
   * do not fail with gethostbyaddr
+  
+1.5.0 - 2011-07-05
+  * add telnet command /chat <on|off>
 
 
 Support
