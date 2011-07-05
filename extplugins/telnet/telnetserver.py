@@ -291,6 +291,7 @@ class TelnetCommandProcessor(TelnetLineProcessor):
   /name <new name> : change your name
   /who             : list current telnet sessions 
   /bans            : list current telnet bans 
+  /chat <on|off>   : show or hide players' chat
   !<b3_command>    : execute a b3 command
 
 anything that is not a recognized command will be broadcasted to the game server chat
@@ -349,6 +350,17 @@ anything that is not a recognized command will be broadcasted to the game server
             self.client.message("new name is too short")
         else:
             self.client.name = newname
+        
+    def cmd_chat(self, arg):
+        param = arg.strip().lower()
+        if param in ('on', '1'):
+            self.client.showChat = True
+            self.client.message("You will now see players' chat")
+        elif param in ('off', '0'):
+            self.client.showChat = False
+            self.client.message("You won't see players' chat anymore")
+        else:
+            self.client.message("bad parameter, expecting one of 'on', 'off', 1 or 0")
         
     def cmd_who(self, arg):
         for sid, client in self.plugin.telnetClients.iteritems():

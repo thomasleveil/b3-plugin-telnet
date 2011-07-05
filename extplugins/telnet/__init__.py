@@ -41,8 +41,10 @@
 #    * fix connection timeout issue
 # 1.4.4 - 2011-07-04
 #    * do not fail with gethostbyaddr
+# 1.5.0 - 2011-07-05
+#    * add telnet command /chat <on|off>
 #
-__version__ = '1.4.4'
+__version__ = '1.5.0'
 __author__    = 'Courgette'
 
 from ConfigParser import NoOptionError
@@ -57,6 +59,7 @@ import re
 import sys
 import thread
 import time
+
 
 
 
@@ -76,7 +79,6 @@ class TelnetPlugin(b3.plugin.Plugin):
             self.disable()
             return
         
-        # load Metabans_account
         self.allGoodToStart = True
         try:
             self.telnetIp = self.config.get('general_preferences', 'ip')
@@ -252,6 +254,7 @@ class TelnetPlugin(b3.plugin.Plugin):
         client.timeAdd = me.console.time()
         client.connection_datetime = datetime.now()
         client.authed = True
+        client.showChat = True
         
         me[client.cid] = client
         me.resetIndex()
@@ -306,6 +309,8 @@ class TelnetPlugin(b3.plugin.Plugin):
             client.message("  round started %s" % event.data)
         elif event.type == b3.events.eventManager.getId('EVT_GAME_MAP_CHANGE'):
             client.message("  map change %s" % event.data)
+        elif event.type == b3.events.eventManager.getId('EVT_CLIENT_SAY') and client.showChat:
+            client.message("  %s: %s" % (event.client.name, event.data))
 
         
 if __name__ == '__main__':
@@ -338,6 +343,7 @@ if __name__ == '__main__':
 """)
     
     from hashlib import md5
+    import random
     from b3.querybuilder import QueryBuilder
     from getopt import getopt
     server_ip = server_port = None
@@ -352,6 +358,7 @@ if __name__ == '__main__':
         p = TelnetPlugin(fakeConsole, conf1)
         if server_port: p.telnetPort = server_port 
         if server_ip: p.telnetIp = server_ip 
+        p.onLoadConfig()
         p.onStartup()
 
         joe.connects(0)
@@ -372,6 +379,8 @@ if __name__ == '__main__':
         time.sleep(5)
         moderator.says("having a beer and you ?")
         while True: 
+            time.sleep(3)
+            joe.says(random.choice(("random stuff", "blabla", "one again", "hi", "bye", "see ya", "n1", "cheater!")))
             pass
     except KeyboardInterrupt:
         p.telnetService.stop()
