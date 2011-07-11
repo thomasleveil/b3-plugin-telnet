@@ -17,7 +17,7 @@ kick, etc) and can talk back or issue B3 commands
 Installation
 ------------
 
- * copy telnet.py into b3/extplugins
+ * copy the telnet folder into b3/extplugins
  * copy plugin_telnet.xml into b3/extplugins/conf
  * update your main b3 config file with :
 
