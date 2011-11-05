@@ -64,6 +64,10 @@ Changelog
 1.5.0 - 2011-07-05
   * add telnet command /chat <on|off>
 
+1.6.0 - 2011-11-05
+  * fix issues related to the use of !die and !restart
+
+
 
 Support
 -------

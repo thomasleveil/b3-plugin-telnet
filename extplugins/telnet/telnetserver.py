@@ -50,6 +50,7 @@ class TelnetServiceThread(threading.Thread):
         self.server = TelnetServer((self.ip, self.port), TelnetRequestHandler, self.plugin)
         self.plugin.info("listening on %s:%s", self.ip, self.port)
         self.server.serve_forever()
+        self.plugin.info("End of telnet service thread")
         
     def stop(self):
         if self.server:
@@ -63,6 +64,9 @@ class TelnetServer(SocketServer.ThreadingTCPServer):
     # timeouts when you kill the server and the sockets don't get
     # closed down correctly.
     allow_reuse_address = True
+    
+    # make all request handling threads die when main server thread exits
+    daemon_threads = True
     
     def __init__(self, server_address, RequestHandlerClass, plugin):
         SocketServer.TCPServer.__init__(self, server_address, RequestHandlerClass)
@@ -324,8 +328,9 @@ anything that is not a recognized command will be broadcasted to the game server
         elif command == '!iamgod':
             self.client.message("There is no god down here")
         elif line[0] in ('!','#'):
-            adminPlugin = self.plugin.console.getPlugin('admin')
-            adminPlugin.OnSay(self.plugin.console.getEvent('EVT_CLIENT_PRIVATE_SAY', line, self.client))
+            #adminPlugin = self.plugin.console.getPlugin('admin')
+            #adminPlugin.OnSay(self.plugin.console.getEvent('EVT_CLIENT_PRIVATE_SAY', line, self.client))
+            self.plugin.console.queueEvent(self.plugin.console.getEvent('EVT_CLIENT_PRIVATE_SAY', data=line, client=self.client, target=self.client))
         else:
             self.plugin.console.say("[%s] %s" %(self.client.name, line))
 

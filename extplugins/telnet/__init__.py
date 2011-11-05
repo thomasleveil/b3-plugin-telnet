@@ -43,8 +43,9 @@
 #    * do not fail with gethostbyaddr
 # 1.5.0 - 2011-07-05
 #    * add telnet command /chat <on|off>
-#
-__version__ = '1.5.0'
+# 1.6.0 - 2011-11-05
+#    * fix issues related to the use of !die and !restart
+__version__ = '1.6'
 __author__    = 'Courgette'
 
 from ConfigParser import NoOptionError
@@ -124,6 +125,7 @@ class TelnetPlugin(b3.plugin.Plugin):
             return
         
         self.telnetClients = b3.clients.Clients(self.console)
+        self.telnetClients_ids = 0
         self.telnetClients.newClient = self._newClient
         self.telnetClients.disconnect = self._disconnect
         
@@ -249,7 +251,8 @@ class TelnetPlugin(b3.plugin.Plugin):
 
     def _newClient(self, client):
         me = self.telnetClients
-        client.cid = len(me) + 1
+        self.telnetClients_ids += 1
+        client.cid = self.telnetClients_ids
         client.console = me.console
         client.timeAdd = me.console.time()
         client.connection_datetime = datetime.now()
