@@ -45,7 +45,9 @@
 #    * add telnet command /chat <on|off>
 # 1.6.0 - 2011-11-05
 #    * fix issues related to the use of !die and !restart
-__version__ = '1.6'
+# 1.7.0 - 2012-09-12
+#    * handle unicode data from B3 events data
+__version__ = '1.7'
 __author__    = 'Courgette'
 
 from ConfigParser import NoOptionError
@@ -55,8 +57,6 @@ from telnet.telnetserver import TelnetServiceThread
 import b3
 import b3.events
 import b3.plugin
-import os
-import re
 import sys
 import thread
 import time
@@ -287,33 +287,37 @@ class TelnetPlugin(b3.plugin.Plugin):
 
 
     def _onB3Event(self, client, event):
-        if event.type in (b3.events.eventManager.getId('EVT_EXIT'), 
+        if type(event.data) is unicode:
+            data = event.data.encode('UTF-8')
+        else:
+            data = event.data
+        if event.type in (b3.events.eventManager.getId('EVT_EXIT'),
                   b3.events.eventManager.getId('EVT_STOP')):
             client.disconnect()
         elif event.type == b3.events.eventManager.getId('EVT_CONSOLE_SAY'):
-            client.message("  console: %s" % event.data)
+            client.message("  console: %s" % data)
         elif event.type == b3.events.eventManager.getId('EVT_CONSOLE_SAYBIG'):
-            client.message("  CONSOLE: %s" % event.data)
+            client.message("  CONSOLE: %s" % data)
         elif event.type == b3.events.eventManager.getId('EVT_CLIENT_CONNECT'):
             client.message("  client connection : %s" % event.client)
         elif event.type == b3.events.eventManager.getId('EVT_CLIENT_DISCONNECT'):
-            client.message("  client disconnection : %s" % event.data)
+            client.message("  client disconnection : %s" % data)
         elif event.type == b3.events.eventManager.getId('EVT_CLIENT_NAME_CHANGE'):
-            client.message("  %s renamed to %s" % (event.client, event.data))
+            client.message("  %s renamed to %s" % (event.client, data))
         elif event.type == b3.events.eventManager.getId('EVT_CLIENT_KICK'):
-            client.message("  %s kicked (%r)" % (event.client, event.data))
+            client.message("  %s kicked (%r)" % (event.client, data))
         elif event.type == b3.events.eventManager.getId('EVT_CLIENT_BAN'):
-            client.message("  %s banned (%r)" % (event.client, event.data))
+            client.message("  %s banned (%r)" % (event.client, data))
         elif event.type == b3.events.eventManager.getId('EVT_CLIENT_BAN_TEMP'):
-            client.message("  %s tempbanned (%r)" % (event.client, event.data))
+            client.message("  %s tempbanned (%r)" % (event.client, data))
         elif event.type == b3.events.eventManager.getId('EVT_CLIENT_UNBAN'):
-            client.message("  %s unbanned (%r)" % (event.client, event.data))
+            client.message("  %s unbanned (%r)" % (event.client, data))
         elif event.type == b3.events.eventManager.getId('EVT_GAME_ROUND_START'):
-            client.message("  round started %s" % event.data)
+            client.message("  round started %s" % data)
         elif event.type == b3.events.eventManager.getId('EVT_GAME_MAP_CHANGE'):
-            client.message("  map change %s" % event.data)
+            client.message("  map change %s" % data)
         elif event.type == b3.events.eventManager.getId('EVT_CLIENT_SAY') and client.showChat:
-            client.message("  %s: %s" % (event.client.name, event.data))
+            client.message("  %s: %s" % (event.client.name, data))
 
         
 if __name__ == '__main__':
