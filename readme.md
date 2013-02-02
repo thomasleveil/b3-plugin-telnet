@@ -17,11 +17,11 @@ kick, etc) and can talk back or issue B3 commands
 Installation
 ------------
 
- * copy the telnet folder into b3/extplugins
- * copy plugin_telnet.ini in the same directory as the one your b3.xml file is in
+ * copy the telnet folder into `b3/extplugins`
+ * copy `plugin_telnet.ini` in the same directory as the one your `b3.xml` file is in
  * update your main b3 config file with :
 
-<plugin name="telnet" config="@conf/plugin_telnet.ini"/>
+    `<plugin name="telnet" config="@conf/plugin_telnet.ini"/>`
 
 
 Usage
