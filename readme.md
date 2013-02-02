@@ -18,10 +18,29 @@ Installation
 ------------
 
  * copy the telnet folder into b3/extplugins
- * copy plugin_telnet.xml into b3/extplugins/conf
+ * copy plugin_telnet.ini in the same directory as the one your b3.xml file is in
  * update your main b3 config file with :
 
-<plugin name="telnet" config="@b3/extplugins/conf/plugin_telnet.xml"/>
+<plugin name="telnet" config="@conf/plugin_telnet.ini"/>
+
+
+Usage
+-----
+
+
+### Setting up an account
+
+You must create a B3 account in your B3 database. This can be done using phpmyadmin or the
+[password plugin](https://github.com/xlr8or/b3-plugin-password).
+Using phpmyadmin, you need to fill the columns 'login' and 'password' in the _clients_ table for your user (password
+must be encrypted with the MD5 algorithm).
+
+
+### Connecting
+
+Use your favorite telnet client and connect to the ip of the host B3 is running on and at the port you set in the
+telnet plugin config file.
+You will then be prompted for your login and password.
 
 
 
@@ -69,6 +88,10 @@ Changelog
 
 1.7.0 - 2012-09-12
   * handle unicode data from B3 events data
+
+1.7.1 - 2013-02-02
+  * fix minor bugs when reacting to B3 shutdown events
+  * change default config file from _xml_ to _ini_ format
 
 
 Support

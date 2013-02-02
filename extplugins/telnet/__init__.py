@@ -47,7 +47,10 @@
 #    * fix issues related to the use of !die and !restart
 # 1.7.0 - 2012-09-12
 #    * handle unicode data from B3 events data
-__version__ = '1.7'
+# 1.7.1 - 2013-02-02
+#    * fix minor bugs when reacting to B3 shutdown events
+#
+__version__ = '1.7.1'
 __author__    = 'Courgette'
 
 from ConfigParser import NoOptionError
@@ -70,6 +73,10 @@ class TelnetPlugin(b3.plugin.Plugin):
     telnetPort = None
     telnetService = None
     telnetClients = None
+
+    def __init__(self, console, config=None):
+        self.forwarded_events = []
+        b3.plugin.Plugin.__init__(self, console, config=config)
     
     def onLoadConfig(self):
         # get the admin plugin so we can register commands
@@ -165,7 +172,8 @@ class TelnetPlugin(b3.plugin.Plugin):
 
     def onEvent(self, event):
         if event.type in (b3.events.EVT_STOP, b3.events.EVT_EXIT):
-            self.telnetService.stop()
+            if self.telnetService:
+                self.telnetService.stop()
         if event.type in self.forwarded_events:
             thread.start_new_thread(self._dispatchEvent, (event,))
 
