@@ -21,7 +21,9 @@ Installation
  * copy `plugin_telnet.ini` in the same directory as the one your `b3.xml` file is in
  * update your main b3 config file with :
 
-    `<plugin name="telnet" config="@conf/plugin_telnet.ini"/>`
+    ```
+    <plugin name="telnet" config="@conf/plugin_telnet.ini"/>
+    ```
 
 
 Usage
